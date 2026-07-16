@@ -1,0 +1,5 @@
+services/user-service/config/user-service-secret.yaml
+services/auth-service/config/auth-secrets.yaml
+services/order-service/config/order-secrets.yaml
+services/apigateway-service/config/api-gateway-secrets.yaml
+services/payment-service/config/payment-secrets.yaml
