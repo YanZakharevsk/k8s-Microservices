@@ -1,0 +1,120 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service-deployment
+  labels:
+    app: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:17
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: user-service-configmap
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: user-service-secret
+                  key: DB_USERNAME
+          command:
+            - sh
+            - "-c"
+            - |
+              until pg_isready -h $DB_HOST -p 5432 -U $DB_USER; do
+                echo "Waiting for postgres on $DB_HOST..."
+                sleep 2
+              done
+
+        - name: wait-for-redis
+          image: redis:7-alpine
+          env:
+              - name: REDIS_HOST
+                valueFrom:
+                  configMapKeyRef:
+                    name: user-service-configmap
+                    key: REDIS_HOST
+              - name: REDIS_PORT
+                valueFrom:
+                  configMapKeyRef:
+                    name: user-service-configmap
+                    key: REDIS_PORT
+          command:
+              - sh
+              - "-c"
+              - |
+                until [ "$(redis-cli -h $REDIS_HOST -p $REDIS_PORT ping)" = "PONG" ]; do
+                  echo "Waiting for redis on $REDIS_HOST..."
+                  sleep 2
+                done
+
+      containers:
+        - name: user-app
+          image: yanusevich/user-service
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8081
+
+          envFrom:
+            - configMapRef:
+                name: user-service-configmap
+            - secretRef:
+                name: user-service-secret
+
+          resources:
+            requests:
+              cpu: "0.2"
+              memory: 800Mi
+            limits:
+              cpu: "0.8"
+              memory: 1Gi
+
+          startupProbe:
+            httpGet:
+              port: 8081
+              path: /actuator/health/liveness
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 20
+
+          readinessProbe:
+            httpGet:
+              port: 8081
+              path: /actuator/health/readiness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              port: 8081
+              path: /actuator/health/liveness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+
+
