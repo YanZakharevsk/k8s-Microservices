@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-deployment
+  labels:
+    app: api-gateway
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: api-gateway-app
+          image: yanusevich/api-gateway-service
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8070
+
+          envFrom:
+            - configMapRef:
+                name: api-gateway-configmap
+            - secretRef:
+                name: api-gateway-secret
+
+          resources:
+            requests:
+              cpu: "0.4"
+              memory: 600Mi
+            limits:
+              cpu: "1.0"
+              memory: 1Gi
+
+          startupProbe:
+            httpGet:
+              port: 8070
+              path: /actuator/health/liveness
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 20
+
+          readinessProbe:
+            httpGet:
+              port: 8070
+              path: /actuator/health/readiness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              port: 8070
+              path: /actuator/health/liveness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+
+
