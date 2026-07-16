@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-postgres-deployment
+  labels:
+    app: auth-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-postgres
+  template:
+    metadata:
+      labels:
+        app: auth-postgres
+    spec:
+      containers:
+        - name: auth-postgres
+          image: postgres:17
+          ports:
+            - containerPort: 5432
+
+          volumeMounts:
+            - mountPath: /var/lib/postgresql/data
+              name: auth-postgres-data
+              subPath: pgdata
+
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: auth-configmap
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: DB_USERNAME
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: auth-secret
+                  key: DB_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+
+      volumes:
+        - name: auth-postgres-data
+          persistentVolumeClaim:
+            claimName: auth-postgres-pvc
