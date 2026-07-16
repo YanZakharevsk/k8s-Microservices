@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-deployment
+  labels:
+    app: payment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment
+  template:
+    metadata:
+      labels:
+        app: payment
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: wait-for-mongodb
+          image: mongo:8.0
+          env:
+            - name: MONGO_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: payment-configmap
+                  key: MONGO_HOST
+            - name: MONGO_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: payment-secret
+                  key: DB_USERNAME
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payment-secret
+                  key: DB_PASSWORD
+          command:
+            - sh
+            - "-c"
+            - |
+              until mongosh "mongodb://$MONGO_USERNAME:$MONGO_PASSWORD@$MONGO_HOST:27017/admin" --eval "db.adminCommand('ping')"; do
+                echo "Waiting for MongoDB..."
+                sleep 2
+              done
+
+      containers:
+        - name: payment-app
+          image: yanusevich/payment-service
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8084
+
+          envFrom:
+            - configMapRef:
+                name: payment-configmap
+            - secretRef:
+                name: payment-secret
+
+          resources:
+            requests:
+              cpu: "0.2"
+              memory: 500Mi
+            limits:
+              cpu: "0.6"
+              memory: 800Mi
+
+          startupProbe:
+            httpGet:
+              port: 8084
+              path: /actuator/health/liveness
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 20
+
+          readinessProbe:
+            httpGet:
+              port: 8084
+              path: /actuator/health/readiness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              port: 8084
+              path: /actuator/health/liveness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+
+
