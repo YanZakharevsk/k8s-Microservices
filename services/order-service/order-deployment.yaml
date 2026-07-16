@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-deployment
+  labels:
+    app: order
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order
+  template:
+    metadata:
+      labels:
+        app: order
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:17
+          env:
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: order-configmap
+                  key: DB_HOST
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: order-secret
+                  key: DB_USERNAME
+          command:
+            - sh
+            - "-c"
+            - |
+              until pg_isready -h $DB_HOST -p 5432 -U $DB_USER; do
+                echo "Waiting for postgres on $DB_HOST..."
+                sleep 2
+              done
+
+      containers:
+        - name: order-app
+          image: yanusevich/order-service
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          ports:
+            - containerPort: 8083
+
+          envFrom:
+            - configMapRef:
+                name: order-configmap
+            - secretRef:
+                name: order-secret
+
+          resources:
+            requests:
+              cpu: "0.5"
+              memory: 800Mi
+            limits:
+              cpu: "0.8"
+              memory: 1Gi
+
+          startupProbe:
+            httpGet:
+              port: 8083
+              path: /actuator/health/liveness
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 20
+
+          readinessProbe:
+            httpGet:
+              port: 8083
+              path: /actuator/health/readiness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              port: 8083
+              path: /actuator/health/liveness
+            initialDelaySeconds: 1
+            timeoutSeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+
+
